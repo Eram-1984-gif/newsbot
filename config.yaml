@@ -1,0 +1,43 @@
+# ===== Тематика канала =====
+channel:
+  topic: "Технологии и искусственный интеллект"   # о чём канал
+  audience: "русскоязычные читатели, интересующиеся технологиями"
+  language: "русский"
+  style: "коротко, по делу, без кликбейта; 1 эмодзи в начале заголовка"
+  signature: ""          # подпись в конце поста, напр. "@my_channel"
+
+# ===== Расписание и лимиты =====
+schedule:
+  check_every_minutes: 30     # как часто искать новости
+  max_posts_per_day: 12
+  min_minutes_between_posts: 45
+  max_posts_per_run: 2
+  quiet_hours: [1, 7]         # с 01:00 до 07:00 не публиковать
+  timezone: "Europe/Moscow"
+
+# ===== Отбор =====
+filter:
+  min_score: 7                # порог важности 1–10
+  max_age_hours: 24           # новости старше не берём
+
+# ===== Источники =====
+sources:
+  rss:
+    - https://habr.com/ru/rss/news/?fl=ru
+    - https://www.theverge.com/rss/index.xml
+    - https://techcrunch.com/feed/
+    - https://feeds.arstechnica.com/arstechnica/index
+    - https://3dnews.ru/news/rss/
+  # Поиск по ключевым словам через Google News RSS (без ключей API)
+  google_news_queries:
+    - query: "искусственный интеллект"
+      lang: ru
+    - query: "OpenAI OR Anthropic OR Google DeepMind"
+      lang: en
+
+# ===== Модель GigaChat =====
+# GigaChat-2 (Lite) — самая большая бесплатная квота.
+# Можно поставить GigaChat-2-Pro или GigaChat-2-Max — пишут лучше, но бесплатных токенов меньше.
+llm:
+  model: "GigaChat-2"
+  max_tokens: 1500
