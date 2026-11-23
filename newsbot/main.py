@@ -15,6 +15,7 @@ from .collector import collect, fetch_article
 from .db import DB
 from .llm import ModelRefused
 from .publisher import Telegram
+from . import template
 
 log = logging.getLogger("main")
 
@@ -38,12 +39,19 @@ def run_cycle(cfg, db: DB, agents: Agents, tg: Telegram):
     # 2. Анализ новых материалов пачками
     new = db.by_status("new", limit=400)
     recent = db.recent_published_titles()
+    ref = cfg.get("refusals", {})
+    approved_now = [r["title"] for r in db.by_status("approved")]
     for i in range(0, len(new), 20):
         batch = new[i:i + 20]
         scored = agents.analyze(batch, recent)
         scored_ids = set()
         for it in scored:
             scored_ids.add(it["id"])
+            if it["reason"] == "модель отказалась" and ref.get("mode", "template") == "template":
+                # без ИИ: важность по ключевым словам рубрик, повторы — по похожести заголовков
+                if template.rubric(it["title"]) and not template.is_repeat(it["title"], recent + approved_now):
+                    it["score"], it["reason"] = max(float(ref.get("score", 8)), f["min_score"]), "шаблон"
+                    approved_now.append(it["title"])
             ok = it["score"] >= f["min_score"] and not it["duplicate"]
             db.update(it["id"], status="approved" if ok else "rejected",
                       score=it["score"], reason=it["reason"])
@@ -57,7 +65,14 @@ def run_cycle(cfg, db: DB, agents: Agents, tg: Telegram):
         return
     day_ago = time.time() - 86400
     left_today = s["max_posts_per_day"] - db.published_count_since(day_ago)
-    queue = sorted(db.by_status("approved"), key=lambda x: (-(x["score"] or 0), -x["published"]))
+    queue = sorted(db.by_status("approved", limit=1000), key=lambda x: (-(x["score"] or 0), -x["published"]))
+    # чередуем: пост от ИИ (наука, медицина, космос…) ↔ пост по шаблону (СВО, политика)
+    ai_q = [x for x in queue if x["reason"] != "шаблон"]
+    tpl_q = [x for x in queue if x["reason"] == "шаблон"]
+    tpl_q.sort(key=lambda x: -x["published"])  # среди шаблонных — самые свежие
+    first, second = (ai_q, tpl_q) if db.last_published_reason() == "шаблон" else (tpl_q, ai_q)
+    queue = [x for pair in zip(first, second) for x in pair] + first[len(second):] + second[len(first):]
+    log.info("В очереди: от ИИ %d, по шаблону (СВО/политика) %d", len(ai_q), len(tpl_q))
     max_age = f["max_age_hours"] * 3600
     posted = 0
     log.info("Одобрено и ждёт публикации: %d; осталось постов на сутки: %d", len(queue), left_today)
@@ -77,19 +92,28 @@ def run_cycle(cfg, db: DB, agents: Agents, tg: Telegram):
         art = fetch_article(it["url"], fallback=f"{it['title']}. {it['summary']}")
         text = art["text"]
         it = {**it, "url": art["url"]}  # в посте — прямая ссылка на источник, а не на Google
-        try:
-            draft = agents.write(it, text)
-        except ModelRefused:
-            db.update(it["id"], status="rejected", reason="модель отказалась писать")
-            log.info("Модель отказалась писать: %s", it["title"])
+        use_template = ref.get("mode", "template") == "template"
+        if template.is_repeat(it["title"], recent):
+            db.update(it["id"], status="rejected", reason="повтор уже опубликованного")
             continue
-        verdict = agents.review(draft, text)
-        if not verdict.get("approved"):
-            db.update(it["id"], status="rejected", reason=f"редактор: {verdict.get('issues')}")
-            log.info("Редактор отклонил: %s", it["title"])
-            continue
-
-        post = verdict.get("post") or draft
+        post = None
+        if it["reason"] != "шаблон":
+            try:
+                draft = agents.write(it, text)
+                verdict = agents.review(draft, text)
+                if verdict.get("approved"):
+                    post = verdict.get("post") or draft
+                elif verdict.get("issues") != "модель отказалась" or not use_template:
+                    db.update(it["id"], status="rejected", reason=f"редактор: {verdict.get('issues')}")
+                    log.info("Редактор отклонил: %s", it["title"])
+                    continue
+            except ModelRefused:
+                if not use_template:
+                    db.update(it["id"], status="rejected", reason="модель отказалась писать")
+                    continue
+        if post is None:  # модель отказалась — публикуем материал источника без ИИ
+            post = template.build_post(it, text, cfg["channel"].get("signature", ""))
+            log.info("Пост без ИИ (шаблон): %s", it["title"])
         try:
             media = cfg.get("media", {})
             image = (art["image"] or it.get("image")) if media.get("photos", True) else None

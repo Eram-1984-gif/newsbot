@@ -57,6 +57,11 @@ class DB:
         r = self.conn.execute("SELECT MAX(published_at) FROM items WHERE status='published'").fetchone()[0]
         return r or 0.0
 
+    def last_published_reason(self) -> str:
+        r = self.conn.execute(
+            "SELECT reason FROM items WHERE status='published' ORDER BY published_at DESC LIMIT 1").fetchone()
+        return (r[0] or "") if r else ""
+
     def cleanup(self, days: int = 30):
         self.conn.execute("DELETE FROM items WHERE created<?", (time.time() - days * 86400,))
         self.conn.commit()
