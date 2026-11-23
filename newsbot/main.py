@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from .agents import Agents
 from .collector import collect, fetch_article
 from .db import DB
+from .llm import ModelRefused
 from .publisher import Telegram
 
 log = logging.getLogger("main")
@@ -35,7 +36,7 @@ def run_cycle(cfg, db: DB, agents: Agents, tg: Telegram):
     collect(cfg, db)
 
     # 2. Анализ новых материалов пачками
-    new = db.by_status("new", limit=120)
+    new = db.by_status("new", limit=400)
     recent = db.recent_published_titles()
     for i in range(0, len(new), 20):
         batch = new[i:i + 20]
@@ -59,6 +60,10 @@ def run_cycle(cfg, db: DB, agents: Agents, tg: Telegram):
     queue = sorted(db.by_status("approved"), key=lambda x: (-(x["score"] or 0), -x["published"]))
     max_age = f["max_age_hours"] * 3600
     posted = 0
+    log.info("Одобрено и ждёт публикации: %d; осталось постов на сутки: %d", len(queue), left_today)
+    wait = s["min_minutes_between_posts"] * 60 - (time.time() - db.last_published_at())
+    if wait > 0:
+        log.info("Пауза между постами: следующий пост можно через %d мин", wait // 60 + 1)
 
     for it in queue:
         if posted >= min(s["max_posts_per_run"], left_today):
@@ -71,7 +76,13 @@ def run_cycle(cfg, db: DB, agents: Agents, tg: Telegram):
 
         art = fetch_article(it["url"], fallback=f"{it['title']}. {it['summary']}")
         text = art["text"]
-        draft = agents.write(it, text)
+        it = {**it, "url": art["url"]}  # в посте — прямая ссылка на источник, а не на Google
+        try:
+            draft = agents.write(it, text)
+        except ModelRefused:
+            db.update(it["id"], status="rejected", reason="модель отказалась писать")
+            log.info("Модель отказалась писать: %s", it["title"])
+            continue
         verdict = agents.review(draft, text)
         if not verdict.get("approved"):
             db.update(it["id"], status="rejected", reason=f"редактор: {verdict.get('issues')}")

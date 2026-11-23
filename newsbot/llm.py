@@ -30,6 +30,10 @@ def _ssl_context():
         return False
 
 
+class ModelRefused(Exception):
+    """GigaChat отказался отвечать (тематическое ограничение)."""
+
+
 class GigaChat:
     def __init__(self, model: str, max_tokens: int):
         self.key = os.environ.get("GIGACHAT_AUTH_KEY", "").strip()
@@ -72,5 +76,8 @@ class GigaChat:
                 time.sleep(5 * (attempt + 1))
                 continue
             r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"].strip()
+            choice = r.json()["choices"][0]
+            if choice.get("finish_reason") == "blacklist":
+                raise ModelRefused(choice["message"]["content"][:200])
+            return choice["message"]["content"].strip()
         raise RuntimeError(f"GigaChat не ответил: {r.status_code} {r.text[:200]}")

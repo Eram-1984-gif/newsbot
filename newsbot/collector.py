@@ -2,12 +2,14 @@
 import calendar
 import hashlib
 import html
+import json
 import logging
 import re
 import time
 from urllib.parse import quote_plus, urlsplit, urlunsplit
 
 import feedparser
+import httpx
 import trafilatura
 
 log = logging.getLogger("collector")
@@ -22,6 +24,22 @@ def _norm_url(url: str) -> str:
 def _clean(text: str) -> str:
     text = re.sub(r"<[^>]+>", " ", text or "")
     return re.sub(r"\s+", " ", html.unescape(text)).strip()
+
+
+def _get(url: str, max_seconds: float = 20, max_bytes: int = 5_000_000) -> bytes:
+    """Скачивание с жёстким лимитом на ОБЩЕЕ время и размер (медленный сайт не повесит бота)."""
+    start = time.monotonic()
+    chunks, size = [], 0
+    with httpx.stream("GET", url, headers={"User-Agent": UA}, timeout=10, follow_redirects=True) as r:
+        r.raise_for_status()
+        for chunk in r.iter_bytes():
+            chunks.append(chunk)
+            size += len(chunk)
+            if size > max_bytes:
+                break
+            if time.monotonic() - start > max_seconds:
+                raise TimeoutError(f"дольше {max_seconds:.0f} с")
+    return b"".join(chunks)
 
 
 BAD_IMG = ("google", "gstatic", ".svg", "logo", "favicon", "pixel", "1x1", "avatar")
@@ -60,11 +78,13 @@ def collect(cfg: dict, db) -> int:
     max_age = cfg["filter"]["max_age_hours"] * 3600
     added = 0
     for feed_url, source in _feeds(cfg):
-        try:
-            feed = feedparser.parse(feed_url, agent=UA)
+        t0 = time.monotonic()
+        try:  # жёсткий лимит: зависший сайт не должен останавливать бота
+            feed = feedparser.parse(_get(feed_url, max_seconds=20))
         except Exception as e:  # noqa: BLE001
-            log.warning("Ошибка ленты %s: %s", feed_url, e)
+            log.warning("Лента недоступна, пропускаю: %s (%s)", source, type(e).__name__)
             continue
+        log.info("Лента %s: %d записей за %.1f с", source, len(feed.entries), time.monotonic() - t0)
         for e in feed.entries[:40]:
             link = e.get("link")
             title = _clean(e.get("title", ""))
@@ -88,6 +108,32 @@ def collect(cfg: dict, db) -> int:
     return added
 
 
+def resolve_google_news(url: str) -> str:
+    """Ссылка Google News → настоящий адрес статьи (иначе нет ни текста, ни фото)."""
+    m = re.search(r"news\.google\.com/(?:rss/)?articles/([^?/]+)", url)
+    if not m:
+        return url
+    gid = m.group(1)
+    try:
+        page = _get(f"https://news.google.com/articles/{gid}", max_seconds=10).decode("utf-8", "replace")
+        sig = re.search(r'data-n-a-sg="([^"]+)"', page).group(1)
+        ts = re.search(r'data-n-a-ts="([^"]+)"', page).group(1)
+        req = ["garturlreq", [["X", "X", ["X", "X"], None, None, 1, 1, "US:en", None, 1, None, None, None,
+                               None, None, 0, 1], "X", "X", 1, [1, 1, 1], 1, 1, None, 0, 0, None, 0],
+               gid, int(ts), sig]
+        r = httpx.post("https://news.google.com/_/DotsSplashUi/data/batchexecute",
+                       data={"f.req": json.dumps([[["Fbv4je", json.dumps(req), None, "generic"]]])},
+                       headers={"User-Agent": UA}, timeout=10)
+        body = r.text.split("\n\n", 1)[1]
+        real = json.loads(json.loads(body)[0][2])[1]
+        if isinstance(real, str) and real.startswith("http"):
+            log.info("Google News → %s", real)
+            return real
+    except Exception as e:  # noqa: BLE001
+        log.info("Не удалось раскрыть ссылку Google News (%s)", type(e).__name__)
+    return url
+
+
 def _og(html_text: str, prop: str) -> str | None:
     for pat in (rf'<meta[^>]+(?:property|name)="{prop}"[^>]+content="([^"]+)"',
                 rf'<meta[^>]+content="([^"]+)"[^>]+(?:property|name)="{prop}"'):
@@ -99,9 +145,10 @@ def _og(html_text: str, prop: str) -> str | None:
 
 def fetch_article(url: str, fallback: str = "") -> dict:
     """Полный текст статьи + главное фото + видео (если это прямой mp4)."""
-    out = {"text": fallback, "image": None, "video": None}
+    url = resolve_google_news(url)
+    out = {"text": fallback, "image": None, "video": None, "url": url}
     try:
-        page = trafilatura.fetch_url(url)
+        page = _get(url, max_seconds=20, max_bytes=3_000_000).decode("utf-8", errors="replace")
         if not page:
             return out
         text = trafilatura.extract(page, include_comments=False, include_tables=False)

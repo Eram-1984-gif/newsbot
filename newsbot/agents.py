@@ -3,7 +3,7 @@ import json
 import logging
 import re
 
-from .llm import GigaChat
+from .llm import GigaChat, ModelRefused  # noqa: F401
 
 log = logging.getLogger("agents")
 
@@ -29,7 +29,19 @@ class Agents:
 
     # ---------- 1. Аналитик ----------
     def analyze(self, items: list[dict], recent_titles: list[str]) -> list[dict]:
-        """Оценивает важность пачки новостей и отсекает дубли уже опубликованного."""
+        """Оценивает пачку; если модель отказалась — делит пачку пополам, пока не найдёт «острую» новость.
+        Новость, на которую модель отказывается отвечать даже одна, получает score 0."""
+        try:
+            return self._analyze_batch(items, recent_titles)
+        except Exception as e:  # noqa: BLE001
+            if len(items) == 1:
+                log.info("Модель отказалась оценивать: %s (%s)", items[0]["title"], type(e).__name__)
+                return [{**items[0], "score": 0.0, "duplicate": False, "reason": "модель отказалась"}]
+            mid = len(items) // 2
+            return (self.analyze(items[:mid], recent_titles) +
+                    self.analyze(items[mid:], recent_titles))
+
+    def _analyze_batch(self, items: list[dict], recent_titles: list[str]) -> list[dict]:
         system = (f"Ты — шеф-редактор Telegram-канала на тему «{self.ch['topic']}». "
                   f"Аудитория: {self.ch['audience']}. Оцени каждую новость по шкале 1–10: "
                   "насколько она важна, свежа и интересна аудитории. Реклама, пресс-релизы без сути, "
@@ -41,11 +53,9 @@ class Agents:
         recent = "\n".join(f"- {t}" for t in recent_titles[:60]) or "(пока ничего)"
         user = (f"Уже опубликовано за последние дни:\n{recent}\n\nНовые материалы:\n{listing}\n\n"
                 'Верни JSON-массив: [{"i": номер, "score": число, "duplicate": bool, "reason": "кратко"}]')
-        try:
-            res = self._ask_json(system, user)
-        except Exception as e:  # noqa: BLE001
-            log.error("Аналитик не ответил корректно: %s", e)
-            return []
+        res = self._ask_json(system, user)
+        if not isinstance(res, list):
+            raise ValueError("ожидался JSON-массив")
         out = []
         for r in res:
             i = r.get("i")
@@ -78,6 +88,8 @@ class Agents:
                 'Верни JSON: {"approved": bool, "issues": "что не так", "post": "итоговый текст поста"}')
         try:
             return self._ask_json(system, user)
+        except ModelRefused:
+            return {"approved": False, "issues": "модель отказалась", "post": post}
         except Exception as e:  # noqa: BLE001
             log.error("Редактор не ответил корректно: %s", e)
             return {"approved": False, "issues": str(e), "post": post}
