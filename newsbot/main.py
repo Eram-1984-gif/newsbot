@@ -47,7 +47,7 @@ def run_cycle(cfg, db: DB, agents: Agents, tg: Telegram):
             db.update(it["id"], status="approved" if ok else "rejected",
                       score=it["score"], reason=it["reason"])
         for it in batch:  # то, что аналитик пропустил, не держим вечно
-            if it["id"] not in scored_ids:
+            if scored and it["id"] not in scored_ids:
                 db.update(it["id"], status="rejected", reason="не оценено")
 
     # 3. Публикация с учётом лимитов
