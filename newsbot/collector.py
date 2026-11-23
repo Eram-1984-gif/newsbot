@@ -24,6 +24,27 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
+BAD_IMG = ("google", "gstatic", ".svg", "logo", "favicon", "pixel", "1x1", "avatar")
+
+
+def _good_image(url) -> bool:
+    return bool(url) and url.startswith("http") and not any(b in url.lower() for b in BAD_IMG)
+
+
+def _entry_image(e) -> str | None:
+    """Картинка из RSS: media:content, media:thumbnail, enclosure или <img> в анонсе."""
+    cands = []
+    for m in e.get("media_content", []) or []:
+        if "image" in (m.get("medium", "") + m.get("type", "image")):
+            cands.append(m.get("url"))
+    cands += [m.get("url") for m in e.get("media_thumbnail", []) or []]
+    cands += [en.get("href") for en in e.get("enclosures", []) or [] if "image" in en.get("type", "")]
+    m = re.search(r'<img[^>]+src="([^"]+)"', e.get("summary", "") or "")
+    if m:
+        cands.append(html.unescape(m.group(1)))
+    return next((c for c in cands if _good_image(c)), None)
+
+
 def _feeds(cfg: dict):
     for url in cfg["sources"].get("rss", []) or []:
         yield url, urlsplit(url).netloc
@@ -60,20 +81,40 @@ def collect(cfg: dict, db) -> int:
                 "id": item_id, "url": link, "title": title,
                 "summary": _clean(e.get("summary", ""))[:600],
                 "source": source, "published": published,
+                "image": _entry_image(e),
             })
             added += 1
     log.info("Собрано новых материалов: %d", added)
     return added
 
 
-def fetch_full_text(url: str, fallback: str = "") -> str:
-    """Полный текст статьи; если не получилось — анонс из ленты."""
+def _og(html_text: str, prop: str) -> str | None:
+    for pat in (rf'<meta[^>]+(?:property|name)="{prop}"[^>]+content="([^"]+)"',
+                rf'<meta[^>]+content="([^"]+)"[^>]+(?:property|name)="{prop}"'):
+        m = re.search(pat, html_text, re.I)
+        if m:
+            return html.unescape(m.group(1))
+    return None
+
+
+def fetch_article(url: str, fallback: str = "") -> dict:
+    """Полный текст статьи + главное фото + видео (если это прямой mp4)."""
+    out = {"text": fallback, "image": None, "video": None}
     try:
-        downloaded = trafilatura.fetch_url(url)
-        if downloaded:
-            text = trafilatura.extract(downloaded, include_comments=False, include_tables=False)
-            if text and len(text) > 300:
-                return text[:8000]
+        page = trafilatura.fetch_url(url)
+        if not page:
+            return out
+        text = trafilatura.extract(page, include_comments=False, include_tables=False)
+        if text and len(text) > 300:
+            out["text"] = text[:8000]
+        img = _og(page, "og:image") or _og(page, "twitter:image")
+        if _good_image(img):
+            out["image"] = img
+        for prop in ("og:video:secure_url", "og:video:url", "og:video"):
+            vid = _og(page, prop)
+            if vid and vid.startswith("http") and vid.lower().split("?")[0].endswith(".mp4"):
+                out["video"] = vid
+                break
     except Exception as e:  # noqa: BLE001
         log.debug("Не удалось скачать %s: %s", url, e)
-    return fallback
+    return out

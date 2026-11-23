@@ -17,6 +17,9 @@ class DB:
                 post TEXT, published_at REAL, message_id INTEGER
             )"""
         )
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(items)")}
+        if "image" not in cols:  # обновление старой базы
+            self.conn.execute("ALTER TABLE items ADD COLUMN image TEXT")
         self.conn.commit()
 
     def exists(self, item_id: str) -> bool:
@@ -24,9 +27,10 @@ class DB:
 
     def add(self, it: dict):
         self.conn.execute(
-            "INSERT OR IGNORE INTO items(id,url,title,summary,source,published,created,status) "
-            "VALUES(?,?,?,?,?,?,?,'new')",
-            (it["id"], it["url"], it["title"], it["summary"], it["source"], it["published"], time.time()),
+            "INSERT OR IGNORE INTO items(id,url,title,summary,source,published,created,status,image) "
+            "VALUES(?,?,?,?,?,?,?,'new',?)",
+            (it["id"], it["url"], it["title"], it["summary"], it["source"], it["published"], time.time(),
+             it.get("image")),
         )
         self.conn.commit()
 

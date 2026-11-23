@@ -32,7 +32,9 @@ def _ssl_context():
 
 class GigaChat:
     def __init__(self, model: str, max_tokens: int):
-        self.key = os.environ["GIGACHAT_AUTH_KEY"]
+        self.key = os.environ.get("GIGACHAT_AUTH_KEY", "").strip()
+        if not self.key:
+            raise RuntimeError("Не задан GIGACHAT_AUTH_KEY")
         self.scope = os.environ.get("GIGACHAT_SCOPE", "GIGACHAT_API_PERS")
         self.model, self.max_tokens = model, max_tokens
         self.http = httpx.Client(timeout=120, verify=_ssl_context())

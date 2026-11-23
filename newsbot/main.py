@@ -11,7 +11,7 @@ import yaml
 from dotenv import load_dotenv
 
 from .agents import Agents
-from .collector import collect, fetch_full_text
+from .collector import collect, fetch_article
 from .db import DB
 from .publisher import Telegram
 
@@ -69,7 +69,8 @@ def run_cycle(cfg, db: DB, agents: Agents, tg: Telegram):
             db.update(it["id"], status="rejected", reason="устарело в очереди")
             continue
 
-        text = fetch_full_text(it["url"], fallback=f"{it['title']}. {it['summary']}")
+        art = fetch_article(it["url"], fallback=f"{it['title']}. {it['summary']}")
+        text = art["text"]
         draft = agents.write(it, text)
         verdict = agents.review(draft, text)
         if not verdict.get("approved"):
@@ -79,11 +80,13 @@ def run_cycle(cfg, db: DB, agents: Agents, tg: Telegram):
 
         post = verdict.get("post") or draft
         try:
-            mid = tg.publish(post)
+            media = cfg.get("media", {})
+            image = (art["image"] or it.get("image")) if media.get("photos", True) else None
+            video = art["video"] if media.get("videos", True) else None
+            mid = tg.publish(post, image=image, video=video)
         except Exception as e:  # noqa: BLE001
-            db.update(it["id"], status="failed", reason=str(e))
             tg.alert(f"не удалось опубликовать «{it['title']}»: {e}")
-            continue
+            break  # проблема с каналом — не тратим токены, повторим в следующий раз
         db.update(it["id"], status="published", post=post, published_at=time.time(), message_id=mid)
         recent.insert(0, it["title"])
         posted += 1

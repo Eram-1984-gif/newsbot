@@ -39,17 +39,37 @@ class Telegram:
             raise RuntimeError(f"Telegram {method}: {data.get('description')}")
         raise RuntimeError(f"Telegram {method}: превышено число попыток")
 
-    def publish(self, text: str) -> int:
-        text = _sanitize(text)[:4000]
+    def _send_text(self, text: str, preview_url: str | None = None) -> int:
+        params = {"chat_id": self.channel, "text": text, "parse_mode": "HTML"}
+        if preview_url:  # большая картинка над текстом через превью ссылки
+            params["link_preview_options"] = {"url": preview_url, "prefer_large_media": True,
+                                              "show_above_text": True}
         try:
-            msg = self._call("sendMessage", chat_id=self.channel, text=text,
-                             parse_mode="HTML", disable_web_page_preview=False)
+            return self._call("sendMessage", **params)["message_id"]
         except RuntimeError as e:
             if "parse entities" not in str(e):
                 raise
             log.warning("Ошибка разметки, отправляю без форматирования")
-            msg = self._call("sendMessage", chat_id=self.channel, text=_strip_all(text))
-        return msg["message_id"]
+            params.pop("parse_mode")
+            params["text"] = _strip_all(text)
+            return self._call("sendMessage", **params)["message_id"]
+
+    def publish(self, text: str, image: str | None = None, video: str | None = None) -> int:
+        text = _sanitize(text)[:4000]
+        if len(_strip_all(text)) <= 1024:  # лимит подписи к медиа в Telegram
+            for method, field, url in (("sendVideo", "video", video), ("sendPhoto", "photo", image)):
+                if not url:
+                    continue
+                try:
+                    msg = self._call(method, chat_id=self.channel, caption=text,
+                                     parse_mode="HTML", **{field: url})
+                    return msg["message_id"]
+                except RuntimeError as e:
+                    if "Forbidden" in str(e) or "chat not found" in str(e):
+                        raise
+                    log.warning("%s не прошёл (%s), пробую дальше", method, e)
+            return self._send_text(text)
+        return self._send_text(text, preview_url=image)
 
     def alert(self, text: str):
         if not self.admin:
