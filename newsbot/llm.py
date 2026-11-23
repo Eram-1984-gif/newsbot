@@ -10,7 +10,7 @@ import httpx
 log = logging.getLogger("llm")
 
 OAUTH_URL = os.environ.get("GIGACHAT_OAUTH_URL", "https://ngw.devices.sberbank.ru:9443/api/v2/oauth")
-API_URL = os.environ.get("GIGACHAT_API_URL", "https://gigachat.devices.sberbank.ru/api/v1")
+API_URL = os.environ.get("GIGACHAT_API_URL", "https://api.giga.chat/v1")
 CA_FILE = os.environ.get("GIGACHAT_CA_FILE", "certs/russian_trusted_root_ca.cer")
 
 
