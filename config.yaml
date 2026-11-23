@@ -1,16 +1,26 @@
 # ===== Тематика канала =====
 channel:
-  topic: "Технологии и искусственный интеллект"   # о чём канал
-  audience: "русскоязычные читатели, интересующиеся технологиями"
+  topic: >-
+    Главные новости по рубрикам: политика (Россия и мир); научные исследования;
+    открытия в медицине; специальная военная операция (СВО); новое вооружение и военная техника;
+    космос, астероиды, новые планеты и экзопланеты.
+    Всё остальное (спорт, шоу-бизнес, реклама, курсы валют, мелкие происшествия) — не по теме.
+  audience: "русскоязычные читатели, которые хотят коротко знать главное за день"
   language: "русский"
-  style: "коротко, по делу, без кликбейта; 1 эмодзи в начале заголовка"
-  signature: ""          # подпись в конце поста, напр. "@my_channel"
+  style: >-
+    нейтрально и по фактам, без оценок и эмоций; 1 эмодзи в начале заголовка;
+    заявления сторон и ведомств обязательно приписывай источнику
+    («по данным Минобороны РФ», «как заявили в Белом доме») и не выдавай их за установленный факт;
+    цифры потерь и результаты ударов — только со ссылкой на того, кто их сообщил;
+    в самом конце поста ровно один хэштег рубрики:
+    #политика #наука #медицина #СВО #вооружение #космос
+  signature: ""          # подпись в конце поста, напр. "@moi_novosti"
 
 # ===== Расписание и лимиты =====
 schedule:
-  check_every_minutes: 30     # как часто искать новости
-  max_posts_per_day: 12
-  min_minutes_between_posts: 45
+  check_every_minutes: 30
+  max_posts_per_day: 16
+  min_minutes_between_posts: 40
   max_posts_per_run: 2
   quiet_hours: [1, 7]         # с 01:00 до 07:00 не публиковать
   timezone: "Europe/Moscow"
@@ -18,31 +28,58 @@ schedule:
 # ===== Отбор =====
 filter:
   min_score: 7                # порог важности 1–10
-  max_age_hours: 24           # новости старше не берём
+  max_age_hours: 24
 
 # ===== Медиа =====
 media:
-  photos: true    # прикреплять главное фото статьи
-  videos: true    # прикреплять видео, если у статьи есть прямой mp4
+  photos: true
+  videos: true
 
 # ===== Источники =====
+# Если какая-то лента перестанет работать, бот просто пропустит её.
 sources:
   rss:
-    - https://habr.com/ru/rss/news/?fl=ru
-    - https://www.theverge.com/rss/index.xml
-    - https://techcrunch.com/feed/
-    - https://feeds.arstechnica.com/arstechnica/index
-    - https://3dnews.ru/news/rss/
-  # Поиск по ключевым словам через Google News RSS (без ключей API)
+    # Политика и общие новости
+    - https://tass.ru/rss/v2.xml
+    - https://ria.ru/export/rss2/archive/index.xml
+    - https://www.interfax.ru/rss.asp
+    - https://rssexport.rbc.ru/rbcnews/news/30/full.rss
+    - https://www.kommersant.ru/RSS/news.xml
+    # Наука и медицина
+    - https://nplus1.ru/rss
+    - https://naked-science.ru/feed
+    - https://elementy.ru/rss/news
+    - https://www.sciencedaily.com/rss/top/science.xml
+    - https://www.sciencedaily.com/rss/health_medicine.xml
+    # Космос
+    - https://www.space.com/feeds/all
+    - https://www.nasa.gov/news-release/feed/
+    - https://www.universetoday.com/feed
+
+  # Поиск по ключевым словам через Google News (за последние сутки)
   google_news_queries:
-    - query: "искусственный интеллект"
+    - query: "СВО Минобороны"
       lang: ru
-    - query: "OpenAI OR Anthropic OR Google DeepMind"
+    - query: "специальная военная операция"
+      lang: ru
+    - query: "новое вооружение испытания"
+      lang: ru
+    - query: "военная техника новинка"
+      lang: ru
+    - query: "открытие медицина учёные"
+      lang: ru
+    - query: "учёные впервые исследование"
+      lang: ru
+    - query: "астероид OR экзопланета OR телескоп"
+      lang: ru
+    - query: "Роскосмос OR NASA запуск"
+      lang: ru
+    - query: "asteroid OR exoplanet discovered"
+      lang: en
+    - query: "medical breakthrough study"
       lang: en
 
 # ===== Модель GigaChat =====
-# GigaChat-2 (Lite) — самая большая бесплатная квота.
-# Можно поставить GigaChat-2-Pro или GigaChat-2-Max — пишут лучше, но бесплатных токенов меньше.
 llm:
   model: "GigaChat-2"
   max_tokens: 1500
