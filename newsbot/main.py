@@ -41,6 +41,22 @@ def run_cycle(cfg, db: DB, agents: Agents, tg: Telegram):
     recent = db.recent_published_titles()
     ref = cfg.get("refusals", {})
     approved_now = [r["title"] for r in db.by_status("approved")]
+    # Экономия токенов: явные новости СВО GigaChat всё равно не оценивает — сразу в шаблон, без модели
+    if ref.get("mode", "template") == "template":
+        rest = []
+        for it in new:
+            rub = template.rubric(it["title"])
+            if rub and rub[0] == "#СВО":
+                if template.is_repeat(it["title"], recent + approved_now):
+                    db.update(it["id"], status="rejected", reason="повтор")
+                else:
+                    db.update(it["id"], status="approved", reason="шаблон",
+                              score=max(float(ref.get("score", 8)), f["min_score"]))
+                    approved_now.append(it["title"])
+            else:
+                rest.append(it)
+        log.info("Новости СВО сразу в шаблон (без модели): %d", len(new) - len(rest))
+        new = rest
     for i in range(0, len(new), 20):
         batch = new[i:i + 20]
         scored = agents.analyze(batch, recent)
