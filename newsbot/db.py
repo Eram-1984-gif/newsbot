@@ -17,6 +17,7 @@ class DB:
                 post TEXT, published_at REAL, message_id INTEGER
             )"""
         )
+        self.conn.execute("CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT)")
         cols = {r[1] for r in self.conn.execute("PRAGMA table_info(items)")}
         if "image" not in cols:  # обновление старой базы
             self.conn.execute("ALTER TABLE items ADD COLUMN image TEXT")
@@ -61,6 +62,19 @@ class DB:
         r = self.conn.execute(
             "SELECT reason FROM items WHERE status='published' ORDER BY published_at DESC LIMIT 1").fetchone()
         return (r[0] or "") if r else ""
+
+    def kv_get(self, key: str):
+        r = self.conn.execute("SELECT value FROM kv WHERE key=?", (key,)).fetchone()
+        return r[0] if r else None
+
+    def kv_set(self, key: str, value: str):
+        self.conn.execute("INSERT OR REPLACE INTO kv(key,value) VALUES(?,?)", (key, value))
+        self.conn.commit()
+
+    def recent_items(self, hours: int = 12):
+        since = time.time() - hours * 3600
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM items WHERE created>? ORDER BY published DESC", (since,))]
 
     def cleanup(self, days: int = 30):
         self.conn.execute("DELETE FROM items WHERE created<?", (time.time() - days * 86400,))
