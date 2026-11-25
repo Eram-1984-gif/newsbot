@@ -1,0 +1,108 @@
+# ===== Тематика канала =====
+channel:
+  topic: >-
+    Главные новости по рубрикам: политика (Россия и мир); научные исследования;
+    открытия в медицине; специальная военная операция (СВО); новое вооружение и военная техника;
+    космос, астероиды, новые планеты и экзопланеты; погода в Москве и Подмосковье (циклоны, снегопады,
+    похолодания, предупреждения синоптиков) и опасные погодные явления в мире.
+    Всё остальное (спорт, шоу-бизнес, реклама, курсы валют, мелкие происшествия) — не по теме.
+  audience: "русскоязычные читатели, которые хотят коротко знать главное за день"
+  language: "русский"
+  style: >-
+    нейтрально и по фактам, без оценок и эмоций; 1 эмодзи в начале заголовка;
+    заявления сторон и ведомств обязательно приписывай источнику
+    («по данным Минобороны РФ», «как заявили в Белом доме») и не выдавай их за установленный факт;
+    цифры потерь и результаты ударов — только со ссылкой на того, кто их сообщил;
+    в самом конце поста ровно один хэштег рубрики:
+    #политика #наука #медицина #СВО #вооружение #космос #погода
+  signature: ""          # подпись в конце поста, напр. "@moi_novosti"
+
+# ===== Расписание и лимиты =====
+schedule:
+  check_every_minutes: 30
+  max_posts_per_day: 16
+  min_minutes_between_posts: 40
+  max_posts_per_run: 2
+  quiet_hours: [1, 7]         # с 01:00 до 07:00 не публиковать
+  timezone: "Europe/Moscow"
+
+# ===== Отбор =====
+filter:
+  min_score: 8                # порог важности 1–10 (8 — только действительно важное)
+  max_age_hours: 24
+
+# ===== Если GigaChat отказывается (СВО, острая политика) =====
+# template — публиковать без ИИ: заголовок + 1–2 предложения из статьи + фото + ссылка
+# skip     — пропускать такие новости
+refusals:
+  mode: template
+  score: 8        # оценка для таких новостей (если в заголовке есть слова рубрик СВО/вооружение/политика)
+
+# ===== Погода =====
+weather:
+  enabled: true
+  forecast_times: ["07:30", "19:00"]   # прогноз по Москве и области (вечером — на завтра)
+  alerts: true                         # предупреждения: снегопад, ливень, гололёд, ветер, резкое похолодание
+  world_digest_times: ["12:00", "16:00", "21:00"]   # дайджест «Погода в мире»
+
+# ===== Медиа =====
+media:
+  photos: true
+  videos: true
+
+# ===== Источники =====
+# Если какая-то лента перестанет работать, бот просто пропустит её.
+sources:
+  rss:
+    # Политика и общие новости
+    - https://tass.ru/rss/v2.xml
+    - https://ria.ru/export/rss2/archive/index.xml
+    - https://www.interfax.ru/rss.asp
+    - https://rssexport.rbc.ru/rbcnews/news/30/full.rss
+    - https://www.kommersant.ru/RSS/news.xml
+    # Наука и медицина
+    - https://nplus1.ru/rss
+    - https://naked-science.ru/feed
+    - https://elementy.ru/rss/news
+    - https://www.sciencedaily.com/rss/top/science.xml
+    - https://www.sciencedaily.com/rss/health_medicine.xml
+    # Космос
+    - https://www.space.com/feeds/all
+    - https://www.nasa.gov/news-release/feed/
+    - https://www.universetoday.com/feed
+
+  # Поиск по ключевым словам через Google News (за последние сутки)
+  google_news_queries:
+    - query: "СВО Минобороны"
+      lang: ru
+    - query: "специальная военная операция"
+      lang: ru
+    - query: "новое вооружение испытания"
+      lang: ru
+    - query: "военная техника новинка"
+      lang: ru
+    - query: "открытие медицина учёные"
+      lang: ru
+    - query: "учёные впервые исследование"
+      lang: ru
+    - query: "астероид OR экзопланета OR телескоп"
+      lang: ru
+    - query: "Роскосмос OR NASA запуск"
+      lang: ru
+    - query: "погода Москва циклон OR снегопад OR похолодание"
+      lang: ru
+    - query: "Гидрометцентр Вильфанд OR Тишковец"
+      lang: ru
+    - query: "ураган OR наводнение OR тайфун OR аномальная жара"
+      lang: ru
+    - query: "hurricane OR typhoon OR flooding OR blizzard"
+      lang: en
+    - query: "asteroid OR exoplanet discovered"
+      lang: en
+    - query: "medical breakthrough study"
+      lang: en
+
+# ===== Модель GigaChat =====
+llm:
+  model: "GigaChat-2"
+  max_tokens: 1500
